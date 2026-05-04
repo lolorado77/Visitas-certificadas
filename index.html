@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Visitas por Cliente</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=Space+Mono:wght@400;700&display=swap');
+
+:root {
+  --bg:     #0d0f14;
+  --panel:  #13161d;
+  --border: #1e2330;
+  --accent: #00e5ff;
+  --green:  #a8ff78;
+  --text:   #e8ecf4;
+  --muted:  #5a6070;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: 'Space Mono', monospace; font-size: 13px;
+  height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* UPLOAD */
+#upload-screen {
+  position: fixed; inset: 0; background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 28px; z-index: 9999; padding: 20px;
+}
+#upload-screen h1 {
+  font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 800;
+  color: var(--accent); letter-spacing: 0.04em;
+}
+#upload-screen p { color: var(--muted); font-size: 12px; text-align: center; line-height: 1.7; }
+.upload-cards { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+.upload-card {
+  width: 270px; background: var(--panel); border: 2px dashed var(--border);
+  border-radius: 12px; padding: 24px 18px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.upload-card.done { border-color: var(--green); border-style: solid; }
+.card-icon { font-size: 32px; }
+.card-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; }
+.card-desc { font-size: 10px; color: var(--muted); line-height: 1.6; }
+.card-fname { font-size: 10px; color: var(--green); min-height: 14px; word-break: break-all; }
+.file-input { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text); width: 100%; cursor: pointer; }
+#btn-procesar {
+  padding: 11px 34px; background: var(--accent); color: #0d0f14;
+  border: none; border-radius: 6px; font-family: 'Syne', sans-serif;
+  font-weight: 800; font-size: 14px; cursor: pointer; letter-spacing: 0.04em;
+}
+#btn-procesar:hover { background: #33eaff; }
+#prog-msg { font-size: 11px; color: var(--muted); min-height: 16px; }
+
+/* DASHBOARD */
+#dashboard { display: none; flex-direction: column; height: 100vh; }
+header {
+  padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px; flex-shrink: 0; flex-wrap: wrap;
+}
+header h1 { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800; color: var(--accent); white-space: nowrap; }
+.controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; flex: 1; }
+.ctrl-group { display: flex; flex-direction: column; gap: 2px; }
+label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+select {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  padding: 4px 8px; font-family: 'Space Mono', monospace; font-size: 11px;
+  border-radius: 4px; cursor: pointer; outline: none; max-width: 210px;
+}
+select:focus { border-color: var(--accent); }
+.hdr-btn { padding: 5px 10px; background: transparent; border-radius: 4px; font-family: 'Space Mono', monospace; font-size: 11px; cursor: pointer; }
+#btn-export { border: 1px solid var(--green); color: var(--green); margin-left: auto; }
+#btn-export:hover { background: rgba(168,255,120,0.1); }
+#btn-reset { border: 1px solid var(--border); color: var(--muted); }
+#btn-reset:hover { border-color: #e8304a; color: #e8304a; }
+
+.stats-bar {
+  display: flex; gap: 18px; padding: 6px 14px; background: var(--panel);
+  border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; align-items: center;
+}
+.stat-item { display: flex; flex-direction: column; align-items: center; }
+.stat-num { font-family: 'Syne', sans-serif; font-size: 19px; font-weight: 800; line-height: 1; }
+.stat-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
+
+.main { display: flex; flex: 1; overflow: hidden; }
+#sidebar {
+  width: 305px; min-width: 240px; background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
+}
+.sidebar-hdr { padding: 7px 10px; border-bottom: 1px solid var(--border); display: flex; gap: 5px; align-items: center; }
+#search-input {
+  flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  padding: 4px 8px; font-family: 'Space Mono', monospace; font-size: 11px; border-radius: 4px; outline: none;
+}
+#search-input:focus { border-color: var(--accent); }
+.fbtns { display: flex; gap: 3px; }
+.fbtn { padding: 3px 6px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); border-radius: 3px; cursor: pointer; font-size: 10px; font-family: 'Space Mono', monospace; }
+.fbtn.a-all { border-color: var(--accent); color: var(--accent); }
+.fbtn.a-vis { border-color: #a8ff78; color: #a8ff78; }
+.fbtn.a-no  { border-color: #e8304a; color: #e8304a; }
+
+#cli-list { flex: 1; overflow-y: auto; }
+#cli-list::-webkit-scrollbar { width: 4px; }
+#cli-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.cli-item {
+  padding: 7px 10px; border-bottom: 1px solid rgba(30,35,48,0.5);
+  cursor: pointer; display: flex; justify-content: space-between; align-items: flex-start; gap: 6px;
+}
+.cli-item:hover { background: rgba(0,229,255,0.04); }
+.cli-item.sel { background: rgba(0,229,255,0.08); border-left: 2px solid var(--accent); }
+.cli-name { font-size: 11px; font-weight: 700; line-height: 1.3; word-break: break-word; }
+.cli-sub  { font-size: 10px; color: var(--muted); line-height: 1.5; }
+.cli-badge { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 17px; min-width: 28px; text-align: right; flex-shrink: 0; }
+.b0{color:#e8304a} .b1{color:#f5a623} .b2{color:#2196f3} .b3{color:#7c3aed}
+
+#map-wrap { flex: 1; position: relative; }
+#map { width: 100%; height: 100%; }
+.map-ov {
+  position: absolute; z-index: 1000; background: rgba(13,15,20,0.88);
+  border: 1px solid var(--border); border-radius: 6px; backdrop-filter: blur(8px); padding: 9px 12px;
+}
+.legend { top: 12px; right: 12px; font-size: 11px; }
+.leg-title { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+.leg-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+.ldot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.lline { width: 16px; height: 2px; border-radius: 1px; background: #a8ff78; flex-shrink: 0; }
+#route-banner { top: 12px; left: 50%; transform: translateX(-50%); font-size: 11px; color: var(--muted); white-space: nowrap; display: none; }
+#route-banner span { color: var(--green); font-weight: 700; }
+#route-panel { bottom: 14px; right: 12px; width: 260px; display: none; }
+#route-panel h3 { font-family: 'Syne', sans-serif; font-size: 12px; color: var(--accent); margin-bottom: 7px; }
+.rday-list { max-height: 190px; overflow-y: auto; }
+.rday-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(30,35,48,0.5); font-size: 11px; cursor: pointer; }
+.rday-item:hover { background: rgba(168,255,120,0.05); }
+.rday-item:last-child { border-bottom: none; }
+.rday-date{color:var(--muted)} .rday-vis{color:var(--accent)} .rday-km{color:var(--green);font-weight:700}
+.leaflet-tooltip {
+  background: rgba(13,15,20,0.92) !important; border: 1px solid var(--border) !important;
+  color: var(--text) !important; font-family: 'Space Mono', monospace !important;
+  font-size: 11px !important; border-radius: 4px !important; box-shadow: none !important;
+}
+.leaflet-tooltip::before { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- UPLOAD SCREEN -->
+<div id="upload-screen">
+  <h1>🗺 DASHBOARD VISITAS</h1>
+  <p>Cargá los dos archivos para generar el análisis.<br>Todo se procesa localmente en tu navegador.</p>
+  <div class="upload-cards">
+    <div class="upload-card" id="card-cl">
+      <div class="card-icon">📋</div>
+      <div class="card-title">LISTADO DE CLIENTES</div>
+      <div class="card-desc">Columnas: Ven., Vendedor, Cuenta, Nombre, Latitud, Longitud, SUCURSAL, etc.</div>
+      <input type="file" accept=".xlsx,.xls" class="file-input" onchange="cargarClientes(this)">
+      <div class="card-fname" id="fn-cl"></div>
+    </div>
+    <div class="upload-card" id="card-ci">
+      <div class="card-icon">📍</div>
+      <div class="card-title">CHECKIN / CHECKOUT</div>
+      <div class="card-desc">Columnas: Codigo, Vendedor, Es Valido, Fecha Checkin, Coordenadas CI, etc.</div>
+      <input type="file" accept=".xlsx,.xls" class="file-input" onchange="cargarCheckin(this)">
+      <div class="card-fname" id="fn-ci"></div>
+    </div>
+  </div>
+  <button id="btn-procesar" onclick="procesar()">▶ PROCESAR Y VER DASHBOARD</button>
+  <div id="prog-msg"></div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+  <header>
+    <h1>🗺 VISITAS POR CLIENTE</h1>
+    <div class="controls">
+      <div class="ctrl-group"><label>Sucursal</label><select id="sel-suc"><option value="">— Todas —</option></select></div>
+      <div class="ctrl-group"><label>Vendedor</label><select id="sel-vend"><option value="">— Todos —</option></select></div>
+      <div class="ctrl-group"><label>Fecha</label><select id="sel-fecha"><option value="">— Todo el período —</option></select></div>
+    </div>
+    <button class="hdr-btn" id="btn-export" onclick="exportExcel()">⬇ Exportar Excel</button>
+    <button class="hdr-btn" id="btn-reset" onclick="resetApp()">⟳ Nuevos archivos</button>
+  </header>
+  <div class="stats-bar">
+    <div class="stat-item"><span class="stat-num" style="color:var(--text)"  id="s-tot">0</span><span class="stat-lbl">Clientes</span></div>
+    <div class="stat-item"><span class="stat-num" style="color:#7c3aed"      id="s-vis">0</span><span class="stat-lbl">Visitados</span></div>
+    <div class="stat-item"><span class="stat-num" style="color:#e8304a"      id="s-no">0</span><span class="stat-lbl">Sin visita</span></div>
+    <div class="stat-item"><span class="stat-num" style="color:#2196f3"      id="s-pct">—</span><span class="stat-lbl">Cobertura</span></div>
+    <div class="stat-item"><span class="stat-num" style="color:var(--green)" id="s-km">—</span><span class="stat-lbl">KM recorridos</span></div>
+    <div class="stat-item"><span class="stat-num" style="color:var(--accent)" id="s-dias">—</span><span class="stat-lbl">Días activos</span></div>
+  </div>
+  <div class="main">
+    <div id="sidebar">
+      <div class="sidebar-hdr">
+        <input id="search-input" type="text" placeholder="Buscar cliente...">
+        <div class="fbtns">
+          <button class="fbtn a-all" onclick="setFiltro('all',this)">TODOS</button>
+          <button class="fbtn"       onclick="setFiltro('vis',this)">✓</button>
+          <button class="fbtn"       onclick="setFiltro('no',this)">✗</button>
+        </div>
+      </div>
+      <div id="cli-list"></div>
+    </div>
+    <div id="map-wrap">
+      <div id="map"></div>
+      <div class="map-ov legend">
+        <div class="leg-title">Visitas</div>
+        <div class="leg-row"><div class="ldot" style="background:#e8304a"></div> Sin visita</div>
+        <div class="leg-row"><div class="ldot" style="background:#f5a623"></div> 1 visita</div>
+        <div class="leg-row"><div class="ldot" style="background:#2196f3"></div> 2 visitas</div>
+        <div class="leg-row"><div class="ldot" style="background:#7c3aed"></div> 3+ visitas</div>
+        <div class="leg-row"><div class="lline"></div> Ruta del día</div>
+      </div>
+      <div class="map-ov" id="route-banner">Ruta: <span id="rb-km">0 km</span> · <span id="rb-stops">0 paradas</span></div>
+      <div class="map-ov" id="route-panel">
+        <h3 id="rp-title">RECORRIDO</h3>
+        <div class="rday-list" id="rday-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+var fileClientes=null, fileCheckin=null, DATA=null;
+var leafMap=null, markers=[], routeLayer=null;
+var selCuenta=null, filtroActual='all', listaFiltrada=[];
+
+function cargarClientes(inp) {
+  var f=inp.files[0]; if(!f) return;
+  fileClientes=f;
+  document.getElementById('fn-cl').textContent='✓ '+f.name;
+  document.getElementById('card-cl').classList.add('done');
+}
+function cargarCheckin(inp) {
+  var f=inp.files[0]; if(!f) return;
+  fileCheckin=f;
+  document.getElementById('fn-ci').textContent='✓ '+f.name;
+  document.getElementById('card-ci').classList.add('done');
+}
+function setMsg(m){document.getElementById('prog-msg').textContent=m;}
+
+function leerXLSX(file){
+  return new Promise(function(resolve,reject){
+    var r=new FileReader();
+    r.onload=function(e){
+      try{
+        var wb=XLSX.read(e.target.result,{type:'array'});
+        resolve(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:null}));
+      }catch(err){reject(err);}
+    };
+    r.onerror=reject;
+    r.readAsArrayBuffer(file);
+  });
+}
+
+async function procesar(){
+  if(!fileClientes||!fileCheckin){setMsg('⚠ Seleccioná los dos archivos primero.');return;}
+  setMsg('Leyendo clientes...');
+  try{
+    var cl=await leerXLSX(fileClientes);
+    setMsg('Leyendo checkins...');
+    var ci=await leerXLSX(fileCheckin);
+    setMsg('Procesando...');
+    DATA=construirDatos(cl,ci);
+    setMsg('');
+    mostrarDashboard();
+  }catch(e){setMsg('Error: '+e.message);console.error(e);}
+}
+
+function parseFecha(v){
+  if(!v) return null;
+  var s=String(v).trim();
+  var m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(m) return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  var m2=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m2) return m2[1]+'-'+m2[2]+'-'+m2[3];
+  return null;
+}
+function parseHora(v){var m=String(v||'').match(/(\d{1,2}):(\d{2})/);return m?m[1].padStart(2,'0')+':'+m[2]:'';}
+function parseCoord(s){if(!s)return[null,null];var p=String(s).split(';');return p.length>=2?[parseFloat(p[0]),parseFloat(p[1])]:[null,null];}
+function haversine(a,b,c,d){var R=6371,r=Math.PI/180,dL=(c-a)*r,dl=(d-b)*r,x=Math.sin(dL/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(dl/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
+
+function construirDatos(clRows,ciRows){
+  var clientes=[];
+  clRows.forEach(function(r){
+    var cuenta=r['Cuenta']!=null?parseInt(r['Cuenta']):null;
+    var vend=r['Ven.']!=null?parseInt(r['Ven.']):null;
+    if(!cuenta||!vend) return;
+    clientes.push({
+      cuenta:cuenta, nombre:String(r['Nombre']||'').trim(),
+      vendedor:vend, vend_nom:String(r['Vendedor']||'').trim(),
+      dia:r['Visita']!=null?String(r['Visita']):'',
+      dir:String(r['Direccion']||r['Dirección']||'').trim(),
+      loc:String(r['Localidad']||'').trim(),
+      lat:r['Latitud']!=null?parseFloat(r['Latitud']):null,
+      lon:r['Longitud']!=null?parseFloat(r['Longitud']):null,
+      sup:String(r['Supervisor']||'').trim(),
+      suc:String(r['SUCURSAL']||'').trim(),
+      visitas:0, ultima:null
+    });
+  });
+  var visitMap={},lastMap={},detalle={};
+  ciRows.forEach(function(r){
+    if(String(r['Es Valido']||'').toUpperCase()!=='SI') return;
+    var cod=r['Codigo']!=null?parseInt(r['Codigo']):null;
+    var vend=r['Vendedor']!=null?parseInt(r['Vendedor']):null;
+    var fecha=parseFecha(r['Fecha Checkin']);
+    var hora=parseHora(r['Fecha Checkin']);
+    var coord=parseCoord(r['Coordenadas CI']);
+    var cli=String(r['Cliente']||'').trim();
+    if(!cod||!fecha) return;
+    visitMap[cod]=(visitMap[cod]||0)+1;
+    if(!lastMap[cod]||fecha>lastMap[cod]) lastMap[cod]=fecha;
+    if(vend){var k=vend+'_'+fecha;if(!detalle[k])detalle[k]=[];detalle[k].push({codigo:cod,cliente:cli,hora:hora,lat:coord[0],lon:coord[1]});}
+  });
+  Object.values(detalle).forEach(function(a){a.sort(function(x,y){return x.hora.localeCompare(y.hora);});});
+  clientes.forEach(function(c){c.visitas=visitMap[c.cuenta]||0;c.ultima=lastMap[c.cuenta]||null;});
+  var routeKm={};
+  Object.entries(detalle).forEach(function(e){
+    var vend=e[0].split('_')[0],fecha=e[0].split('_')[1],arr=e[1];
+    var pts=arr.filter(function(d){return d.lat&&d.lon;}),km=0;
+    for(var i=1;i<pts.length;i++) km+=haversine(pts[i-1].lat,pts[i-1].lon,pts[i].lat,pts[i].lon);
+    if(!routeKm[vend])routeKm[vend]={};
+    routeKm[vend][fecha]=Math.round(km*10)/10;
+  });
+  var vendMap={};
+  clientes.forEach(function(c){if(!vendMap[c.vendedor])vendMap[c.vendedor]={codigo:c.vendedor,nombre:c.vend_nom,suc:c.suc};});
+  return{clientes:clientes,detalle:detalle,routeKm:routeKm,vendedores:Object.values(vendMap).sort(function(a,b){return a.codigo-b.codigo;})};
+}
+
+function mostrarDashboard(){
+  document.getElementById('upload-screen').style.display='none';
+  document.getElementById('dashboard').style.display='flex';
+  if(!leafMap){
+    leafMap=L.map('map',{center:[-34.9,-58.2],zoom:9,preferCanvas:true});
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'© CartoDB',maxZoom:19}).addTo(leafMap);
+  }
+  cargarSelectores();
+  render();
+}
+
+function addOpt(sel,val,txt){var o=document.createElement('option');o.value=val;o.textContent=txt;sel.appendChild(o);}
+
+function cargarSelectores(){
+  var ss=document.getElementById('sel-suc'),sv=document.getElementById('sel-vend'),sf=document.getElementById('sel-fecha');
+  ss.innerHTML='<option value="">— Todas —</option>';
+  sv.innerHTML='<option value="">— Todos —</option>';
+  sf.innerHTML='<option value="">— Todo el período —</option>';
+  [...new Set(DATA.clientes.map(function(c){return c.suc;}).filter(Boolean))].sort().forEach(function(s){addOpt(ss,s,s);});
+  DATA.vendedores.forEach(function(v){addOpt(sv,v.codigo,v.codigo+' - '+v.nombre);});
+  [...new Set(Object.keys(DATA.detalle).map(function(k){return k.split('_')[1];}))].sort().forEach(function(f){addOpt(sf,f,f.split('-').reverse().join('/'));});
+  ss.onchange=function(){filtrarVendedores();render();};
+  sv.onchange=render; sf.onchange=render;
+  document.getElementById('search-input').oninput=function(){renderLista();renderMarkers();};
+}
+
+function filtrarVendedores(){
+  var suc=document.getElementById('sel-suc').value,sv=document.getElementById('sel-vend'),cur=sv.value;
+  sv.innerHTML='<option value="">— Todos —</option>';
+  var codes=new Set(DATA.clientes.filter(function(c){return !suc||c.suc===suc;}).map(function(c){return c.vendedor;}));
+  DATA.vendedores.filter(function(v){return codes.has(v.codigo);}).forEach(function(v){addOpt(sv,v.codigo,v.codigo+' - '+v.nombre);});
+  if([...sv.options].some(function(o){return o.value==cur;})) sv.value=cur;
+}
+
+function resetApp(){
+  fileClientes=fileCheckin=DATA=null; selCuenta=null; filtroActual='all';
+  document.getElementById('fn-cl').textContent='';
+  document.getElementById('fn-ci').textContent='';
+  document.getElementById('card-cl').classList.remove('done');
+  document.getElementById('card-ci').classList.remove('done');
+  document.getElementById('prog-msg').textContent='';
+  if(routeLayer){leafMap.removeLayer(routeLayer);routeLayer=null;}
+  markers.forEach(function(m){leafMap.removeLayer(m);});markers=[];
+  document.getElementById('dashboard').style.display='none';
+  document.getElementById('upload-screen').style.display='flex';
+}
+
+function color(n){return n===0?'#e8304a':n===1?'#f5a623':n===2?'#2196f3':'#7c3aed';}
+function radio(n){return n===0?5:Math.min(5+n*1.5,12);}
+function badgeCls(n){return n===0?'b0':n===1?'b1':n===2?'b2':'b3';}
+function visCount(c,fecha){if(!fecha)return c.visitas;var k=c.vendedor+'_'+fecha;return(DATA.detalle[k]||[]).filter(function(d){return d.codigo===c.cuenta;}).length;}
+
+function listaVisible(){
+  var q=document.getElementById('search-input').value.toLowerCase().trim();
+  return listaFiltrada.filter(function(c){
+    if(filtroActual==='vis'&&c.vc===0) return false;
+    if(filtroActual==='no' &&c.vc> 0) return false;
+    if(q&&!c.nombre.toLowerCase().includes(q)&&!String(c.cuenta).includes(q)) return false;
+    return true;
+  });
+}
+
+function setFiltro(f,btn){
+  filtroActual=f;
+  document.querySelectorAll('.fbtn').forEach(function(b){b.className='fbtn';});
+  btn.className='fbtn a-'+f;
+  renderLista();renderMarkers();
+}
+
+function render(){
+  var suc=document.getElementById('sel-suc').value;
+  var vendV=document.getElementById('sel-vend').value;
+  var vend=vendV?parseInt(vendV):null;
+  var fecha=document.getElementById('sel-fecha').value;
+  listaFiltrada=DATA.clientes
+    .filter(function(c){return(!suc||c.suc===suc)&&(!vend||c.vendedor===vend);})
+    .map(function(c){return Object.assign({},c,{vc:visCount(c,fecha)});});
+  var tot=listaFiltrada.length,con=listaFiltrada.filter(function(c){return c.vc>0;}).length;
+  document.getElementById('s-tot').textContent=tot;
+  document.getElementById('s-vis').textContent=con;
+  document.getElementById('s-no').textContent=tot-con;
+  document.getElementById('s-pct').textContent=tot>0?Math.round(con/tot*100)+'%':'—';
+  var km=0,dias=0;
+  if(vend){var vk=DATA.routeKm[String(vend)]||{};if(fecha){km=vk[fecha]||0;dias=vk[fecha]?1:0;}else{Object.values(vk).forEach(function(v){km+=v;});dias=Object.keys(vk).length;}}
+  document.getElementById('s-km').textContent=km>0?km.toFixed(1)+' km':'—';
+  document.getElementById('s-dias').textContent=dias>0?dias:'—';
+  manejarRuta(vend,fecha);renderLista();renderMarkers();
+}
+
+function manejarRuta(vend,fecha){
+  var panel=document.getElementById('route-panel'),banner=document.getElementById('route-banner');
+  if(!vend){if(routeLayer){leafMap.removeLayer(routeLayer);routeLayer=null;}panel.style.display='none';banner.style.display='none';return;}
+  var vk=DATA.routeKm[String(vend)]||{};
+  if(fecha){
+    dibujarRuta(vend,fecha);
+    var det=DATA.detalle[vend+'_'+fecha]||[];
+    document.getElementById('rb-km').textContent=(vk[fecha]||0).toFixed(1)+' km';
+    document.getElementById('rb-stops').textContent=det.length+' paradas';
+    banner.style.display='block';panel.style.display='none';
+  }else{
+    if(routeLayer){leafMap.removeLayer(routeLayer);routeLayer=null;}
+    banner.style.display='none';
+    var days=Object.entries(vk).sort(function(a,b){return a[0].localeCompare(b[0]);});
+    if(!days.length){panel.style.display='none';return;}
+    var sv=document.getElementById('sel-vend');
+    var vNom=(sv.options[sv.selectedIndex]?sv.options[sv.selectedIndex].textContent:'').split(' - ')[1]||'';
+    document.getElementById('rp-title').textContent='RECORRIDO — '+vNom;
+    document.getElementById('rday-list').innerHTML=days.map(function(e){
+      var d=e[0],km=e[1],det=DATA.detalle[vend+'_'+d]||[];
+      return '<div class="rday-item" onclick="irFecha(\''+d+'\')"><span class="rday-date">'+d.split('-').reverse().join('/')+'</span><span class="rday-vis">'+det.length+' vis.</span><span class="rday-km">'+km.toFixed(1)+' km</span></div>';
+    }).join('');
+    panel.style.display='block';
+  }
+}
+
+function irFecha(f){document.getElementById('sel-fecha').value=f;render();}
+
+function dibujarRuta(vend,fecha){
+  if(routeLayer){leafMap.removeLayer(routeLayer);routeLayer=null;}
+  var det=(DATA.detalle[vend+'_'+fecha]||[]).filter(function(d){return d.lat&&d.lon;});
+  if(!det.length) return;
+  var pts=det.map(function(d){return[d.lat,d.lon];});
+  routeLayer=L.layerGroup();
+  if(pts.length>1) L.polyline(pts,{color:'#a8ff78',weight:2,opacity:0.7,dashArray:'6,4'}).addTo(routeLayer);
+  det.forEach(function(d,i){
+    L.circleMarker([d.lat,d.lon],{radius:8,fillColor:'#a8ff78',color:'#0d0f14',weight:1.5,fillOpacity:0.85})
+     .bindTooltip('<b>'+(i+1)+'. '+d.cliente+'</b><br>🕐 '+d.hora,{permanent:false,direction:'top'})
+     .addTo(routeLayer);
+  });
+  routeLayer.addTo(leafMap);
+  if(pts.length>1) leafMap.fitBounds(L.latLngBounds(pts).pad(0.12));
+  else leafMap.setView(pts[0],14);
+}
+
+function renderMarkers(){
+  markers.forEach(function(m){leafMap.removeLayer(m);});markers=[];
+  listaVisible().forEach(function(c){
+    if(!c.lat||!c.lon) return;
+    var m=L.circleMarker([c.lat,c.lon],{radius:radio(c.vc),fillColor:color(c.vc),color:'#0d0f14',weight:1,fillOpacity:c.vc===0?0.55:0.85});
+    var ul=c.ultima?'<br>Última: '+c.ultima.split('-').reverse().join('/'):'';
+    m.bindTooltip('<b>'+c.nombre+'</b><br>'+c.dir+'<br>'+c.loc+'<br>Visitas: <b>'+c.vc+'</b>'+ul,{permanent:false,direction:'top'});
+    m.on('click',function(){elegirCliente(c.cuenta);});
+    m.addTo(leafMap);markers.push(m);
+  });
+}
+
+function renderLista(){
+  var items=listaVisible();
+  document.getElementById('cli-list').innerHTML=
+    items.slice(0,600).map(function(c){
+      return '<div class="cli-item'+(c.cuenta===selCuenta?' sel':'')+'" onclick="elegirCliente('+c.cuenta+')">'
+        +'<div style="min-width:0">'
+          +'<div class="cli-name">'+c.nombre+'</div>'
+          +'<div class="cli-sub">'+c.loc+(c.dia?' · Día '+c.dia:'')+'</div>'
+          +'<div class="cli-sub">'+c.vend_nom+'</div>'
+          +(c.ultima?'<div class="cli-sub">Última: '+c.ultima.split('-').reverse().join('/')+'</div>':'')
+        +'</div>'
+        +'<div class="cli-badge '+badgeCls(c.vc)+'">'+c.vc+'</div>'
+      +'</div>';
+    }).join('')
+    +(items.length>600?'<div style="padding:10px;text-align:center;color:var(--muted);font-size:10px">… y '+(items.length-600)+' más</div>':'');
+}
+
+function elegirCliente(cuenta){
+  selCuenta=cuenta;
+  var c=listaFiltrada.find(function(x){return x.cuenta===cuenta;});
+  if(c&&c.lat&&c.lon) leafMap.setView([c.lat,c.lon],16,{animate:true});
+  renderLista();
+}
+
+function exportExcel(){
+  var rows=listaFiltrada.map(function(c){return{
+    'Cuenta':c.cuenta,'Nombre':c.nombre,'Dirección':c.dir,'Localidad':c.loc,
+    'Cód. Vendedor':c.vendedor,'Vendedor':c.vend_nom,'Supervisor':c.sup,'Sucursal':c.suc,
+    'Día de visita':c.dia,'Visitado':c.vc>0?'SÍ':'NO','Cant. visitas':c.vc,
+    'Última visita':c.ultima?c.ultima.split('-').reverse().join('/'):'',
+    'Latitud':c.lat,'Longitud':c.lon
+  };});
+  var ws=XLSX.utils.json_to_sheet(rows);
+  ws['!cols']=[{wch:10},{wch:30},{wch:30},{wch:20},{wch:12},{wch:25},{wch:20},{wch:15},{wch:12},{wch:10},{wch:12},{wch:14},{wch:12},{wch:12}];
+  var wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Visitas por Cliente');
+  var suc=document.getElementById('sel-suc').value,vend=document.getElementById('sel-vend').value,fecha=document.getElementById('sel-fecha').value;
+  var parts=['visitas'];
+  if(suc)parts.push(suc.replace(/\s+/g,'_'));
+  if(vend)parts.push('vend'+vend);
+  if(fecha)parts.push(fecha);
+  XLSX.writeFile(wb,parts.join('_')+'.xlsx');
+}
+</script>
+</body>
+</html>
